@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-class TravelPalColors {
-  static const blue = Color(0xFF0057B8);
-  static const yellow = Color(0xFFFFD700);
-  static const red = Color(0xFFCE1126);
-}
-
+import 'core/theme/app_theme.dart';
+import 'features/home/home_page.dart';
+import 'features/map/map_page.dart';
+import 'features/places/places_page.dart';
+import 'features/itinerary/itinerary_page.dart';
+import 'features/history/history_page.dart';
 
 void main() {
   runApp(const TravelPalApp());
@@ -19,34 +19,68 @@ class TravelPalApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'TravelPal',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
-        ),
-        useMaterial3: true,
-      ),
-      home: const HomePage(),
+      theme: AppTheme.lightTheme,
+      home: const MainNavigationPage(),
     );
   }
 }
 
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
+class MainNavigationPage extends StatefulWidget {
+  const MainNavigationPage({super.key});
+
+  @override
+  State<MainNavigationPage> createState() => _MainNavigationPageState();
+}
+
+class _MainNavigationPageState extends State<MainNavigationPage> {
+  int _currentIndex = 0;
+
+  final List<Widget> _pages = const [
+    HomePage(),
+    MapPage(),
+    PlacesPage(),
+    ItineraryPage(),
+    HistoryPage(),
+  ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('TravelPal'),
-      ),
-      body: const Center(
-        child: Text(
-          'Welcome to TravelPal!',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
+      body: _pages[_currentIndex],
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Home',
           ),
-        ),
+          NavigationDestination(
+            icon: Icon(Icons.map_outlined),
+            selectedIcon: Icon(Icons.map),
+            label: 'Map',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.place_outlined),
+            selectedIcon: Icon(Icons.place),
+            label: 'Places',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.event_note_outlined),
+            selectedIcon: Icon(Icons.event_note),
+            label: 'Itinerary',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history_outlined),
+            selectedIcon: Icon(Icons.history),
+            label: 'History',
+          ),
+        ],
       ),
     );
   }

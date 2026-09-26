@@ -22,23 +22,59 @@ class _MapPageState extends State<MapPage> {
   LatLng? userLocation;
   bool isLoadingLocation = false;
 
-  String geofenceMessage = 'Geofence is starting...';
+  String geofenceMessage = 'Geofences are starting...';
 
-  static const LatLng jamboreeLake = LatLng(
-    14.386472,
-    121.035833,
-  );
+  // ------------------------------------------------------------
+  // PLACE DATA
+  // ------------------------------------------------------------
 
-  // REAL GEOFENCE RADIUS
-  static const double testRadius = 100;
+  static const List<Map<String, dynamic>> places = [
+    {
+      'id': 'jamboree_lake',
+      'name': 'Jamboree Lake',
+      'description':
+          'A well-known natural landmark and freshwater lake in Muntinlupa.',
+      'position': LatLng(
+        14.386472,
+        121.035833,
+      ),
+    },
+    {
+      'id': 'museo_ng_muntinlupa',
+      'name': 'Museo ng Muntinlupa',
+      'description':
+          'A museum showcasing the history, culture, and heritage of Muntinlupa.',
+      'position': LatLng(
+        14.387417,
+        121.046472,
+      ),
+    },
+    {
+      'id': 'new_bilibid_prison',
+      'name': 'New Bilibid Prison',
+      'description':
+          'A major correctional facility and historical landmark in Muntinlupa.',
+      'position': LatLng(
+        14.382333,
+        121.029861,
+      ),
+    },
+  ];
+
+  // 100-meter geofence around every place.
+  static const double geofenceRadius = 100;
 
   @override
   void initState() {
     super.initState();
 
     _getUserLocation();
-    _startJamboreeGeofence();
+    _startGeofences();
   }
+
+  // ------------------------------------------------------------
+  // GPS LOCATION
+  // ------------------------------------------------------------
 
   Future<void> _getUserLocation() async {
     setState(() {
@@ -85,6 +121,10 @@ class _MapPageState extends State<MapPage> {
     });
   }
 
+  // ------------------------------------------------------------
+  // GEOFENCE PERMISSION
+  // ------------------------------------------------------------
+
   Future<bool> _requestGeofencePermission() async {
     if (!await geofence.Geofencing
         .instance.isLocationServicesEnabled) {
@@ -110,6 +150,10 @@ class _MapPageState extends State<MapPage> {
     return true;
   }
 
+  // ------------------------------------------------------------
+  // GEOFENCE SETUP
+  // ------------------------------------------------------------
+
   void _setupGeofencing() {
     try {
       geofence.Geofencing.instance.setup(
@@ -127,7 +171,11 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
-  Future<void> _startJamboreeGeofence() async {
+  // ------------------------------------------------------------
+  // START ALL GEOFENCES
+  // ------------------------------------------------------------
+
+  Future<void> _startGeofences() async {
     try {
       final permission =
           await _requestGeofencePermission();
@@ -139,6 +187,7 @@ class _MapPageState extends State<MapPage> {
                 'Location permission is required.';
           });
         }
+
         return;
       }
 
@@ -154,28 +203,30 @@ class _MapPageState extends State<MapPage> {
         _onGeofenceError,
       );
 
-      final region = geofence.GeofenceRegion.circular(
-        id: 'jamboree_lake',
-        data: {
-          'name': 'Jamboree Lake',
-        },
-        center: geofence.LatLng(
-          jamboreeLake.latitude,
-          jamboreeLake.longitude,
-        ),
-        radius: testRadius,
-      );
+      final regions = places.map((place) {
+        final position = place['position'] as LatLng;
+
+        return geofence.GeofenceRegion.circular(
+          id: place['id'] as String,
+          data: {
+            'name': place['name'] as String,
+          },
+          center: geofence.LatLng(
+            position.latitude,
+            position.longitude,
+          ),
+          radius: geofenceRadius,
+        );
+      }).toSet();
 
       await geofence.Geofencing.instance.start(
-        regions: {
-          region,
-        },
+        regions: regions,
       );
 
       if (mounted) {
         setState(() {
           geofenceMessage =
-              'Jamboree Lake geofence is active.';
+              '${places.length} geofences are active.';
         });
       }
     } catch (e, s) {
@@ -193,6 +244,10 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
+  // ------------------------------------------------------------
+  // GEOFENCE EVENTS
+  // ------------------------------------------------------------
+
   Future<void> _onGeofenceStatusChanged(
     geofence.GeofenceRegion region,
     geofence.GeofenceStatus status,
@@ -206,18 +261,32 @@ class _MapPageState extends State<MapPage> {
       return;
     }
 
+    String placeName = region.id;
+
+    if (region.data is Map) {
+      final data = region.data as Map;
+
+      if (data['name'] != null) {
+        placeName = data['name'].toString();
+      }
+    }
+
     if (status == geofence.GeofenceStatus.enter) {
       setState(() {
         geofenceMessage =
-            '📍 You are near Jamboree Lake!';
+            '📍 You are near $placeName!';
       });
     } else if (status == geofence.GeofenceStatus.exit) {
       setState(() {
         geofenceMessage =
-            'You left the Jamboree Lake area.';
+            'You left the $placeName area.';
       });
     }
   }
+
+  // ------------------------------------------------------------
+  // GEOFENCE ERROR
+  // ------------------------------------------------------------
 
   void _onGeofenceError(
     Object error,
@@ -229,39 +298,16 @@ class _MapPageState extends State<MapPage> {
     );
   }
 
+  // ------------------------------------------------------------
+  // MAP UI
+  // ------------------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
     const muntinlupa = LatLng(
       14.3855,
       121.0370,
     );
-
-    final places = [
-      {
-        'name': 'Jamboree Lake',
-        'description':
-            'A well-known natural landmark and freshwater lake in Muntinlupa.',
-        'position': jamboreeLake,
-      },
-      {
-        'name': 'Museo ng Muntinlupa',
-        'description':
-            'A museum showcasing the history, culture, and heritage of Muntinlupa.',
-        'position': const LatLng(
-          14.387417,
-          121.046472,
-        ),
-      },
-      {
-        'name': 'New Bilibid Prison',
-        'description':
-            'A major correctional facility and historical landmark in Muntinlupa.',
-        'position': const LatLng(
-          14.382333,
-          121.029861,
-        ),
-      },
-    ];
 
     return Scaffold(
       appBar: AppBar(
@@ -280,6 +326,10 @@ class _MapPageState extends State<MapPage> {
                     'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.travelpal.app',
               ),
+
+              // ------------------------------------------------
+              // USER LOCATION
+              // ------------------------------------------------
 
               if (userLocation != null)
                 MarkerLayer(
@@ -305,15 +355,26 @@ class _MapPageState extends State<MapPage> {
                   ],
                 ),
 
+              // ------------------------------------------------
+              // PLACE MARKERS
+              // ------------------------------------------------
+
               MarkerLayer(
-                markers: places.asMap().entries.map((entry) {
+                markers: places
+                    .asMap()
+                    .entries
+                    .map((entry) {
                   final index = entry.key;
                   final place = entry.value;
+
+                  final position =
+                      place['position'] as LatLng;
+
                   final isSelected =
                       selectedMarkerIndex == index;
 
                   return Marker(
-                    point: place['position'] as LatLng,
+                    point: position,
                     width: 55,
                     height: 55,
                     child: GestureDetector(
@@ -330,7 +391,8 @@ class _MapPageState extends State<MapPage> {
                               placeName:
                                   place['name'] as String,
                               description:
-                                  place['description'] as String,
+                                  place['description']
+                                      as String,
                             ),
                           ),
                         );
@@ -359,7 +421,8 @@ class _MapPageState extends State<MapPage> {
                           child: Icon(
                             Icons.location_on,
                             size: isSelected ? 40 : 32,
-                            color: AppColors.secondaryRed,
+                            color:
+                                AppColors.secondaryRed,
                           ),
                         ),
                       ),
@@ -369,6 +432,10 @@ class _MapPageState extends State<MapPage> {
               ),
             ],
           ),
+
+          // ------------------------------------------------
+          // LOCATION LOADING
+          // ------------------------------------------------
 
           if (isLoadingLocation)
             const Positioned(
@@ -388,12 +455,18 @@ class _MapPageState extends State<MapPage> {
                         ),
                       ),
                       SizedBox(width: 10),
-                      Text('Getting location...'),
+                      Text(
+                        'Getting location...',
+                      ),
                     ],
                   ),
                 ),
               ),
             ),
+
+          // ------------------------------------------------
+          // GEOFENCE STATUS
+          // ------------------------------------------------
 
           Positioned(
             left: 16,
@@ -416,6 +489,10 @@ class _MapPageState extends State<MapPage> {
       ),
     );
   }
+
+  // ------------------------------------------------------------
+  // CLEANUP
+  // ------------------------------------------------------------
 
   @override
   void dispose() {

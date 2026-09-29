@@ -1,13 +1,24 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
+import 'features/auth/login_page.dart';
+import 'features/auth/register_page.dart';
 import 'features/home/home_page.dart';
 import 'features/map/map_page.dart';
 import 'features/places/places_page.dart';
 import 'features/itinerary/itinerary_page.dart';
 import 'features/history/history_page.dart';
+import 'firebase_options.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
   runApp(const TravelPalApp());
 }
 
@@ -20,7 +31,39 @@ class TravelPalApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'TravelPal',
       theme: AppTheme.lightTheme,
-      home: const MainNavigationPage(),
+      home: const AuthGate(),
+      routes: {
+        '/login': (_) => const LoginPage(),
+        '/register': (_) => const RegisterPage(),
+        '/home': (_) => const MainNavigationPage(),
+      },
+    );
+  }
+}
+
+/// Decides which screen to show based on the Firebase auth state.
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final user = snapshot.data;
+
+        if (user != null && user.emailVerified) {
+          return const MainNavigationPage();
+        }
+
+        return const LoginPage();
+      },
     );
   }
 }

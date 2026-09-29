@@ -1,13 +1,16 @@
+import 'dart:convert';
 import 'dart:developer' as dev;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geofencing_api/geofencing_api.dart' as geofence;
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:latlong2/latlong.dart';
 
-import '../../core/theme/app_colors.dart';
+import '../../models/place.dart';
 import '../places/place_details_page.dart';
+import '../places/places_page.dart';
 
 class MapPage extends StatefulWidget {
   const MapPage({super.key});
@@ -16,7 +19,8 @@ class MapPage extends StatefulWidget {
   State<MapPage> createState() => _MapPageState();
 }
 
-class _MapPageState extends State<MapPage> {
+class _MapPageState extends State<MapPage>
+    with TickerProviderStateMixin {
   int? selectedMarkerIndex;
 
   LatLng? userLocation;
@@ -24,56 +28,166 @@ class _MapPageState extends State<MapPage> {
 
   String geofenceMessage = 'Geofences are starting...';
 
-  // ------------------------------------------------------------
-  // PLACE DATA
-  // ------------------------------------------------------------
+  String? nearbyPlaceName;
+  String? nearbyPlaceDescription;
 
-  static const List<Map<String, dynamic>> places = [
-    {
-      'id': 'jamboree_lake',
-      'name': 'Jamboree Lake',
-      'description':
-          'A well-known natural landmark and freshwater lake in Muntinlupa.',
-      'position': LatLng(
-        14.386472,
-        121.035833,
-      ),
-    },
-    {
-      'id': 'museo_ng_muntinlupa',
-      'name': 'Museo ng Muntinlupa',
-      'description':
-          'A museum showcasing the history, culture, and heritage of Muntinlupa.',
-      'position': LatLng(
-        14.387417,
-        121.046472,
-      ),
-    },
-    {
-      'id': 'new_bilibid_prison',
-      'name': 'New Bilibid Prison',
-      'description':
-          'A major correctional facility and historical landmark in Muntinlupa.',
-      'position': LatLng(
-        14.382333,
-        121.029861,
-      ),
-    },
-  ];
+  late final AnimationController _pulseController;
 
-  // 100-meter geofence around every place.
+  final MapController _mapController = MapController();
+
+  List<Polygon> muntinlupaBoundary = [];
+
   static const double geofenceRadius = 100;
+
+  // ------------------------------------------------------------
+  // PLACES
+  // ------------------------------------------------------------
+
+  List<Place> get allPlaces => PlacesPage.places;
+
+  // ------------------------------------------------------------
+  // INIT
+  // ------------------------------------------------------------
 
   @override
   void initState() {
     super.initState();
 
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
+
+    _loadMuntinlupaBoundary();
     _getUserLocation();
     _startGeofences();
   }
 
   // ------------------------------------------------------------
-  // GPS LOCATION
+  // MUNTINLUPA GEOJSON BOUNDARY
+  // ------------------------------------------------------------
+
+  Future<void> _loadMuntinlupaBoundary() async {
+    try {
+      final jsonString = await rootBundle.loadString(
+        'assets/maps/muntinlupa_boundary.geojson',
+      );
+
+      final Map<String, dynamic> geoJson =
+          jsonDecode(jsonString);
+
+      final List<dynamic> features =
+          geoJson['features'] as List<dynamic>;
+
+      final List<Polygon> polygons = [];
+
+      for (final feature in features) {
+        final geometry = feature['geometry'];
+
+        if (geometry == null) {
+          continue;
+        }
+
+        final String geometryType =
+            geometry['type'] as String;
+
+        final coordinates =
+            geometry['coordinates'];
+
+        if (geometryType == 'Polygon') {
+          final List<dynamic> rings =
+              coordinates as List<dynamic>;
+
+          for (final ring in rings) {
+            final points =
+                _convertRingToLatLng(ring);
+
+            if (points.length >= 3) {
+              polygons.add(
+                _createBoundaryPolygon(points),
+              );
+            }
+          }
+        } else if (geometryType == 'MultiPolygon') {
+          final List<dynamic> multiPolygon =
+              coordinates as List<dynamic>;
+
+          for (final polygon in multiPolygon) {
+            final List<dynamic> rings =
+                polygon as List<dynamic>;
+
+            for (final ring in rings) {
+              final points =
+                  _convertRingToLatLng(ring);
+
+              if (points.length >= 3) {
+                polygons.add(
+                  _createBoundaryPolygon(points),
+                );
+              }
+            }
+          }
+        }
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        muntinlupaBoundary = polygons;
+      });
+
+      dev.log(
+        'Muntinlupa boundary loaded: '
+        '${polygons.length} polygon(s)',
+      );
+    } catch (e, s) {
+      dev.log(
+        'Failed to load Muntinlupa boundary: $e',
+        stackTrace: s,
+      );
+    }
+  }
+
+  List<LatLng> _convertRingToLatLng(
+    dynamic ring,
+  ) {
+    final List<dynamic> coordinates =
+        ring as List<dynamic>;
+
+    return coordinates.map<LatLng>((coordinate) {
+      final List<dynamic> point =
+          coordinate as List<dynamic>;
+
+      final double longitude =
+          (point[0] as num).toDouble();
+
+      final double latitude =
+          (point[1] as num).toDouble();
+
+      return LatLng(
+        latitude,
+        longitude,
+      );
+    }).toList();
+  }
+
+  Polygon _createBoundaryPolygon(
+    List<LatLng> points,
+  ) {
+    return Polygon(
+      points: points,
+      color: Colors.blue.withValues(
+        alpha: 0.10,
+      ),
+      borderColor: Colors.blue,
+      borderStrokeWidth: 3,
+    );
+  }
+
+  // ------------------------------------------------------------
+  // USER LOCATION
   // ------------------------------------------------------------
 
   Future<void> _getUserLocation() async {
@@ -85,31 +199,43 @@ class _MapPageState extends State<MapPage> {
         await geo.Geolocator.isLocationServiceEnabled();
 
     if (!serviceEnabled) {
-      setState(() {
-        isLoadingLocation = false;
-      });
+      if (mounted) {
+        setState(() {
+          isLoadingLocation = false;
+        });
+      }
+
       return;
     }
 
     geo.LocationPermission permission =
         await geo.Geolocator.checkPermission();
 
-    if (permission == geo.LocationPermission.denied) {
+    if (permission ==
+        geo.LocationPermission.denied) {
       permission =
           await geo.Geolocator.requestPermission();
     }
 
-    if (permission == geo.LocationPermission.denied ||
+    if (permission ==
+            geo.LocationPermission.denied ||
         permission ==
             geo.LocationPermission.deniedForever) {
-      setState(() {
-        isLoadingLocation = false;
-      });
+      if (mounted) {
+        setState(() {
+          isLoadingLocation = false;
+        });
+      }
+
       return;
     }
 
     final position =
         await geo.Geolocator.getCurrentPosition();
+
+    if (!mounted) {
+      return;
+    }
 
     setState(() {
       userLocation = LatLng(
@@ -122,12 +248,51 @@ class _MapPageState extends State<MapPage> {
   }
 
   // ------------------------------------------------------------
-  // GEOFENCE PERMISSION
+  // MOVE MAP TO USER LOCATION
+  // ------------------------------------------------------------
+
+  Future<void> _goToCurrentLocation() async {
+    await _getUserLocation();
+
+    if (userLocation != null) {
+      _mapController.move(
+        userLocation!,
+        16,
+      );
+    }
+  }
+
+  // ------------------------------------------------------------
+  // ZOOM CONTROLS
+  // ------------------------------------------------------------
+
+  void _zoomIn() {
+    final currentZoom =
+        _mapController.camera.zoom;
+
+    _mapController.move(
+      _mapController.camera.center,
+      currentZoom + 1,
+    );
+  }
+
+  void _zoomOut() {
+    final currentZoom =
+        _mapController.camera.zoom;
+
+    _mapController.move(
+      _mapController.camera.center,
+      currentZoom - 1,
+    );
+  }
+
+  // ------------------------------------------------------------
+  // GEOFENCING
   // ------------------------------------------------------------
 
   Future<bool> _requestGeofencePermission() async {
-    if (!await geofence.Geofencing
-        .instance.isLocationServicesEnabled) {
+    if (!await geofence.Geofencing.instance
+        .isLocationServicesEnabled) {
       return false;
     }
 
@@ -135,13 +300,15 @@ class _MapPageState extends State<MapPage> {
         await geofence.Geofencing.instance
             .getLocationPermission();
 
-    if (permission == geofence.LocationPermission.denied) {
+    if (permission ==
+        geofence.LocationPermission.denied) {
       permission =
           await geofence.Geofencing.instance
               .requestLocationPermission();
     }
 
-    if (permission == geofence.LocationPermission.denied ||
+    if (permission ==
+            geofence.LocationPermission.denied ||
         permission ==
             geofence.LocationPermission.deniedForever) {
       return false;
@@ -149,10 +316,6 @@ class _MapPageState extends State<MapPage> {
 
     return true;
   }
-
-  // ------------------------------------------------------------
-  // GEOFENCE SETUP
-  // ------------------------------------------------------------
 
   void _setupGeofencing() {
     try {
@@ -170,10 +333,6 @@ class _MapPageState extends State<MapPage> {
       );
     }
   }
-
-  // ------------------------------------------------------------
-  // START ALL GEOFENCES
-  // ------------------------------------------------------------
 
   Future<void> _startGeofences() async {
     try {
@@ -203,17 +362,15 @@ class _MapPageState extends State<MapPage> {
         _onGeofenceError,
       );
 
-      final regions = places.map((place) {
-        final position = place['position'] as LatLng;
-
+      final regions = allPlaces.map((place) {
         return geofence.GeofenceRegion.circular(
-          id: place['id'] as String,
+          id: place.id,
           data: {
-            'name': place['name'] as String,
+            'name': place.name,
           },
           center: geofence.LatLng(
-            position.latitude,
-            position.longitude,
+            place.latitude,
+            place.longitude,
           ),
           radius: geofenceRadius,
         );
@@ -226,7 +383,7 @@ class _MapPageState extends State<MapPage> {
       if (mounted) {
         setState(() {
           geofenceMessage =
-              '${places.length} geofences are active.';
+              '${allPlaces.length} geofences are active.';
         });
       }
     } catch (e, s) {
@@ -244,10 +401,6 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
-  // ------------------------------------------------------------
-  // GEOFENCE EVENTS
-  // ------------------------------------------------------------
-
   Future<void> _onGeofenceStatusChanged(
     geofence.GeofenceRegion region,
     geofence.GeofenceStatus status,
@@ -263,30 +416,50 @@ class _MapPageState extends State<MapPage> {
 
     String placeName = region.id;
 
-    if (region.data is Map) {
+    String placeDescription =
+        'Explore this place in TravelPal.';
+
+    final matchingPlaces = allPlaces.where(
+      (place) => place.id == region.id,
+    );
+
+    if (matchingPlaces.isNotEmpty) {
+      final place = matchingPlaces.first;
+
+      placeName = place.name;
+      placeDescription = place.description;
+    } else if (region.data is Map) {
       final data = region.data as Map;
 
       if (data['name'] != null) {
-        placeName = data['name'].toString();
+        placeName =
+            data['name'].toString();
       }
     }
 
-    if (status == geofence.GeofenceStatus.enter) {
+    if (status ==
+        geofence.GeofenceStatus.enter) {
       setState(() {
+        nearbyPlaceName = placeName;
+
+        nearbyPlaceDescription =
+            placeDescription;
+
         geofenceMessage =
             '📍 You are near $placeName!';
       });
-    } else if (status == geofence.GeofenceStatus.exit) {
+    } else if (status ==
+        geofence.GeofenceStatus.exit) {
       setState(() {
+        nearbyPlaceName = null;
+
+        nearbyPlaceDescription = null;
+
         geofenceMessage =
             'You left the $placeName area.';
       });
     }
   }
-
-  // ------------------------------------------------------------
-  // GEOFENCE ERROR
-  // ------------------------------------------------------------
 
   void _onGeofenceError(
     Object error,
@@ -299,11 +472,132 @@ class _MapPageState extends State<MapPage> {
   }
 
   // ------------------------------------------------------------
-  // MAP UI
+  // PLACE DETAILS
+  // ------------------------------------------------------------
+
+  void _openNearbyPlace() {
+    if (nearbyPlaceName == null) {
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            PlaceDetailsPage(
+          placeName: nearbyPlaceName!,
+          description:
+              nearbyPlaceDescription ??
+                  'Explore this place in TravelPal.',
+        ),
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------
+  // PULSING GREEN PLACE MARKER
+  // ------------------------------------------------------------
+
+  Marker _buildPulsingPlaceMarker(
+    int index,
+    Place place,
+  ) {
+    // FIX:
+    // Place has latitude + longitude.
+    // It does NOT have a "position" property.
+
+    final LatLng position = LatLng(
+      place.latitude,
+      place.longitude,
+    );
+
+    final isSelected =
+        selectedMarkerIndex == index;
+
+    return Marker(
+      point: position,
+      width: 60,
+      height: 60,
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            selectedMarkerIndex = index;
+          });
+
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) =>
+                  PlaceDetailsPage(
+                placeName: place.name,
+                description: place.description,
+              ),
+            ),
+          );
+        },
+        child: AnimatedBuilder(
+          animation: _pulseController,
+          builder: (context, child) {
+            final pulse =
+                _pulseController.value;
+
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width:
+                      44 + (pulse * 12),
+                  height:
+                      44 + (pulse * 12),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color:
+                        Colors.green.withValues(
+                      alpha:
+                          0.18 * (1 - pulse),
+                    ),
+                  ),
+                ),
+                Container(
+                  width:
+                      isSelected ? 18 : 14,
+                  height:
+                      isSelected ? 18 : 14,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.green,
+                    border: Border.all(
+                      color: Colors.white,
+                      width: 3,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color:
+                            Colors.green.withValues(
+                          alpha: 0.35,
+                        ),
+                        blurRadius: 8,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------
+  // UI
   // ------------------------------------------------------------
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     const muntinlupa = LatLng(
       14.3855,
       121.0370,
@@ -311,21 +605,43 @@ class _MapPageState extends State<MapPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Muntinlupa Map'),
+        title: const Text(
+          'Muntinlupa Map',
+        ),
       ),
       body: Stack(
         children: [
           FlutterMap(
+            mapController: _mapController,
             options: const MapOptions(
               initialCenter: muntinlupa,
               initialZoom: 14,
             ),
             children: [
+              // ------------------------------------------------
+              // OPEN STREET MAP
+              // ------------------------------------------------
+
               TileLayer(
                 urlTemplate:
                     'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.travelpal.app',
+                userAgentPackageName:
+                    'com.travelpal.app',
               ),
+
+              // ------------------------------------------------
+              // MUNTINLUPA AREA
+              // ------------------------------------------------
+
+              if (muntinlupaBoundary.isNotEmpty)
+                PolygonLayer(
+                  polygons:
+                      muntinlupaBoundary,
+                  invertedFill:
+                      Colors.black.withValues(
+                    alpha: 0.25,
+                  ),
+                ),
 
               // ------------------------------------------------
               // USER LOCATION
@@ -335,19 +651,25 @@ class _MapPageState extends State<MapPage> {
                 MarkerLayer(
                   markers: [
                     Marker(
-                      point: userLocation!,
+                      point:
+                          userLocation!,
                       width: 40,
                       height: 40,
                       child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withValues(
+                        decoration:
+                            BoxDecoration(
+                          color: Colors.blue
+                              .withValues(
                             alpha: 0.2,
                           ),
-                          shape: BoxShape.circle,
+                          shape:
+                              BoxShape.circle,
                         ),
-                        child: const Icon(
+                        child:
+                            const Icon(
                           Icons.my_location,
-                          color: Colors.blue,
+                          color:
+                              Colors.blue,
                           size: 28,
                         ),
                       ),
@@ -360,82 +682,91 @@ class _MapPageState extends State<MapPage> {
               // ------------------------------------------------
 
               MarkerLayer(
-                markers: places
+                markers: allPlaces
                     .asMap()
                     .entries
-                    .map((entry) {
-                  final index = entry.key;
-                  final place = entry.value;
-
-                  final position =
-                      place['position'] as LatLng;
-
-                  final isSelected =
-                      selectedMarkerIndex == index;
-
-                  return Marker(
-                    point: position,
-                    width: 55,
-                    height: 55,
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          selectedMarkerIndex = index;
-                        });
-
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                PlaceDetailsPage(
-                              placeName:
-                                  place['name'] as String,
-                              description:
-                                  place['description']
-                                      as String,
-                            ),
-                          ),
-                        );
-                      },
-                      child: AnimatedScale(
-                        scale: isSelected ? 1.25 : 1.0,
-                        duration:
-                            const Duration(milliseconds: 200),
-                        child: Container(
-                          decoration: isSelected
-                              ? BoxDecoration(
-                                  color: Colors.white,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black
-                                          .withValues(
-                                        alpha: 0.20,
-                                      ),
-                                      blurRadius: 4,
-                                      spreadRadius: 1,
-                                    ),
-                                  ],
-                                )
-                              : null,
-                          child: Icon(
-                            Icons.location_on,
-                            size: isSelected ? 40 : 32,
-                            color:
-                                AppColors.secondaryRed,
-                          ),
-                        ),
+                    .map(
+                      (entry) =>
+                          _buildPulsingPlaceMarker(
+                        entry.key,
+                        entry.value,
                       ),
-                    ),
-                  );
-                }).toList(),
+                    )
+                    .toList(),
               ),
             ],
           ),
 
-          // ------------------------------------------------
+          // ----------------------------------------------------
+          // ZOOM CONTROLS
+          // ----------------------------------------------------
+
+          Positioned(
+            right: 16,
+            bottom: 200,
+            child: Column(
+              children: [
+                FloatingActionButton.small(
+                  heroTag:
+                      'zoom_in_button',
+                  backgroundColor:
+                      Colors.white,
+                  foregroundColor:
+                      Colors.blue,
+                  elevation: 5,
+                  onPressed: _zoomIn,
+                  child: const Icon(
+                    Icons.add,
+                  ),
+                ),
+
+                const SizedBox(
+                  height: 8,
+                ),
+
+                FloatingActionButton.small(
+                  heroTag:
+                      'zoom_out_button',
+                  backgroundColor:
+                      Colors.white,
+                  foregroundColor:
+                      Colors.blue,
+                  elevation: 5,
+                  onPressed: _zoomOut,
+                  child: const Icon(
+                    Icons.remove,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ----------------------------------------------------
+          // CURRENT LOCATION BUTTON
+          // ----------------------------------------------------
+
+          Positioned(
+            right: 16,
+            bottom: 130,
+            child: FloatingActionButton(
+              heroTag:
+                  'current_location_button',
+              backgroundColor:
+                  Colors.white,
+              foregroundColor:
+                  Colors.blue,
+              elevation: 5,
+              onPressed:
+                  _goToCurrentLocation,
+              child: const Icon(
+                Icons.my_location,
+              ),
+            ),
+          ),
+
+          // ----------------------------------------------------
           // LOCATION LOADING
-          // ------------------------------------------------
+          // ----------------------------------------------------
 
           if (isLoadingLocation)
             const Positioned(
@@ -443,18 +774,23 @@ class _MapPageState extends State<MapPage> {
               left: 16,
               child: Card(
                 child: Padding(
-                  padding: EdgeInsets.all(12),
+                  padding:
+                      EdgeInsets.all(12),
                   child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisSize:
+                        MainAxisSize.min,
                     children: [
                       SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(
+                        child:
+                            CircularProgressIndicator(
                           strokeWidth: 2,
                         ),
                       ),
-                      SizedBox(width: 10),
+                      SizedBox(
+                        width: 10,
+                      ),
                       Text(
                         'Getting location...',
                       ),
@@ -464,9 +800,143 @@ class _MapPageState extends State<MapPage> {
               ),
             ),
 
-          // ------------------------------------------------
+          // ----------------------------------------------------
+          // NEARBY PLACE CARD
+          // ----------------------------------------------------
+
+          if (nearbyPlaceName != null)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 80,
+              child: Card(
+                elevation: 6,
+                child: Padding(
+                  padding:
+                      const EdgeInsets.all(
+                    16,
+                  ),
+                  child: Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment
+                            .start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding:
+                                const EdgeInsets
+                                    .all(8),
+                            decoration:
+                                BoxDecoration(
+                              color: Colors
+                                  .green
+                                  .withValues(
+                                alpha: 0.12,
+                              ),
+                              shape:
+                                  BoxShape
+                                      .circle,
+                            ),
+                            child:
+                                const Icon(
+                              Icons
+                                  .location_on,
+                              color:
+                                  Colors.green,
+                            ),
+                          ),
+
+                          const SizedBox(
+                            width: 12,
+                          ),
+
+                          const Expanded(
+                            child: Text(
+                              'You are near!',
+                              style:
+                                  TextStyle(
+                                fontSize: 13,
+                                color:
+                                    Colors.grey,
+                              ),
+                            ),
+                          ),
+
+                          IconButton(
+                            onPressed: () {
+                              setState(() {
+                                nearbyPlaceName =
+                                    null;
+
+                                nearbyPlaceDescription =
+                                    null;
+
+                                geofenceMessage =
+                                    '${allPlaces.length} geofences are active.';
+                              });
+                            },
+                            icon:
+                                const Icon(
+                              Icons.close,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(
+                        height: 8,
+                      ),
+
+                      Text(
+                        nearbyPlaceName!,
+                        style:
+                            const TextStyle(
+                          fontSize: 20,
+                          fontWeight:
+                              FontWeight.bold,
+                        ),
+                      ),
+
+                      const SizedBox(
+                        height: 6,
+                      ),
+
+                      Text(
+                        nearbyPlaceDescription ??
+                            '',
+                        maxLines: 2,
+                        overflow:
+                            TextOverflow
+                                .ellipsis,
+                      ),
+
+                      const SizedBox(
+                        height: 12,
+                      ),
+
+                      SizedBox(
+                        width:
+                            double.infinity,
+                        child:
+                            ElevatedButton(
+                          onPressed:
+                              _openNearbyPlace,
+                          child:
+                              const Text(
+                            'View Place',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // ----------------------------------------------------
           // GEOFENCE STATUS
-          // ------------------------------------------------
+          // ----------------------------------------------------
 
           Positioned(
             left: 16,
@@ -474,12 +944,18 @@ class _MapPageState extends State<MapPage> {
             bottom: 16,
             child: Card(
               child: Padding(
-                padding: const EdgeInsets.all(14),
+                padding:
+                    const EdgeInsets.all(
+                  14,
+                ),
                 child: Text(
                   geofenceMessage,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
+                  textAlign:
+                      TextAlign.center,
+                  style:
+                      const TextStyle(
+                    fontWeight:
+                        FontWeight.bold,
                   ),
                 ),
               ),
@@ -496,6 +972,8 @@ class _MapPageState extends State<MapPage> {
 
   @override
   void dispose() {
+    _pulseController.dispose();
+
     geofence.Geofencing.instance
         .removeGeofenceStatusChangedListener(
       _onGeofenceStatusChanged,

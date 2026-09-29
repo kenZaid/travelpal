@@ -1,12 +1,6 @@
-import 'package:flutter/material.dart';
+import 'place.dart';
 
-import '../../core/theme/app_colors.dart';
-import '../../models/place.dart';
-import 'place_details_page.dart';
-
-class PlacesPage extends StatelessWidget {
-  const PlacesPage({super.key});
-
+class PlaceData {
   static const List<Place> places = [
     Place(
       id: 'jamboree_lake',
@@ -16,6 +10,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.386472,
       longitude: 121.035833,
     ),
+
     Place(
       id: 'museo_ng_muntinlupa',
       name: 'Museo ng Muntinlupa',
@@ -24,6 +19,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.387417,
       longitude: 121.046472,
     ),
+
     Place(
       id: 'memorial_hill',
       name: 'Memorial Hill',
@@ -32,6 +28,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.385417,
       longitude: 121.034611,
     ),
+
     Place(
       id: 'japanese_cemetery',
       name: 'Japanese Cemetery',
@@ -40,14 +37,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.374639,
       longitude: 121.026222,
     ),
-    Place(
-      id: 'new_bilibid_prison',
-      name: 'New Bilibid Prison',
-      description:
-          'A major correctional facility and historical landmark in Muntinlupa.',
-      latitude: 14.382056,
-      longitude: 121.029667,
-    ),
+
     Place(
       id: 'biological_production_services_building',
       name: 'Biological Production Services Building',
@@ -56,6 +46,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.415861,
       longitude: 121.043194,
     ),
+
     Place(
       id: 'liwasan_ng_mga_bayani',
       name: 'Liwasan ng mga Bayani',
@@ -64,6 +55,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.418667,
       longitude: 121.044639,
     ),
+
     Place(
       id: 'memorial_for_peace_osawa_shrine',
       name: 'Memorial for Peace (Osawa Shrine)',
@@ -72,6 +64,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.386583,
       longitude: 121.034583,
     ),
+
     Place(
       id: 'rizal_laguna_marker',
       name: 'Rizal-Laguna Marker',
@@ -80,6 +73,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.369028,
       longitude: 121.050556,
     ),
+
     Place(
       id: 'river_park_filinvest',
       name: 'River Park, Filinvest City',
@@ -88,6 +82,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.414444,
       longitude: 121.040083,
     ),
+
     Place(
       id: 'sports_complex',
       name: 'Muntinlupa Sports Complex',
@@ -96,6 +91,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.383528,
       longitude: 121.052639,
     ),
+
     Place(
       id: 'bayanan_bay_walk',
       name: 'Bayanan Bay Walk',
@@ -104,6 +100,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.410472,
       longitude: 121.051972,
     ),
+
     Place(
       id: 'alabang_town_center',
       name: 'Alabang Town Center',
@@ -112,6 +109,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.4235,
       longitude: 121.0298,
     ),
+
     Place(
       id: 'festival_mall',
       name: 'Festival Mall',
@@ -120,6 +118,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.4157,
       longitude: 121.0389,
     ),
+
     Place(
       id: 'alabang_westgate',
       name: 'Alabang Westgate',
@@ -128,6 +127,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.4215,
       longitude: 121.0347,
     ),
+
     Place(
       id: 'northgate',
       name: 'Northgate',
@@ -136,6 +136,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.4252,
       longitude: 121.0389,
     ),
+
     Place(
       id: 'sm_tunasan',
       name: 'SM Tunasan',
@@ -144,6 +145,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.3775,
       longitude: 121.0458,
     ),
+
     Place(
       id: 'ayala_south_park',
       name: 'Ayala South Park',
@@ -152,6 +154,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.4118,
       longitude: 121.0465,
     ),
+
     Place(
       id: 'vtx_terminal',
       name: 'VTX Terminal',
@@ -160,6 +163,7 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.4157,
       longitude: 121.0462,
     ),
+
     Place(
       id: 'alabang_public_market',
       name: 'Alabang Public Market',
@@ -168,72 +172,5 @@ class PlacesPage extends StatelessWidget {
       latitude: 14.420129,
       longitude: 121.044560,
     ),
-    
-    Place(
-  id: 'new_bilibid_prison',
-  name: 'New Bilibid Prison',
-  description:
-      'A major correctional facility and historical site located in Muntinlupa City.',
-  latitude: 14.382056,
-  longitude: 121.029667,
-),
   ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Places'),
-      ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: places.length,
-        itemBuilder: (context, index) {
-          final place = places[index];
-
-          return Card(
-            margin: const EdgeInsets.only(bottom: 16),
-            child: ListTile(
-              contentPadding: const EdgeInsets.all(16),
-              leading: CircleAvatar(
-                backgroundColor: AppColors.primaryBlue,
-                child: const Icon(
-                  Icons.location_on,
-                  color: Colors.white,
-                ),
-              ),
-              title: Text(
-                place.name,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              subtitle: Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  place.description,
-                ),
-              ),
-              trailing: const Icon(
-                Icons.arrow_forward_ios,
-                size: 16,
-              ),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => PlaceDetailsPage(
-                      placeName: place.name,
-                      description: place.description,
-                    ),
-                  ),
-                );
-              },
-            ),
-          );
-        },
-      ),
-    );
-  }
 }

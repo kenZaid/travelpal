@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../itinerary/itinerary_data.dart';
 
 class PlaceDetailsPage extends StatelessWidget {
   final String placeName;
@@ -12,23 +13,79 @@ class PlaceDetailsPage extends StatelessWidget {
     required this.description,
   });
 
+  Future<void> _addToItinerary(
+    BuildContext context,
+  ) async {
+    if (ItineraryData.containsPlace(placeName)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This place is already in your itinerary.',
+          ),
+        ),
+      );
+
+      return;
+    }
+
+    final date = await showDatePicker(
+      context: context,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(
+        const Duration(days: 365),
+      ),
+      initialDate: DateTime.now(),
+    );
+
+    if (date == null || !context.mounted) {
+      return;
+    }
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
+
+    if (time == null || !context.mounted) {
+      return;
+    }
+
+    ItineraryData.addPlace(
+      place: placeName,
+      description: description,
+      date: date,
+      time: time.format(context),
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Added to itinerary!',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(placeName),
       ),
+
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
           children: [
             Container(
               width: double.infinity,
               height: 220,
               decoration: BoxDecoration(
                 color: AppColors.background,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius:
+                    BorderRadius.circular(16),
                 border: Border.all(
                   color: AppColors.primaryBlue,
                   width: 2,
@@ -73,7 +130,9 @@ class PlaceDetailsPage extends StatelessWidget {
                   Icons.location_on,
                   color: AppColors.secondaryRed,
                 ),
+
                 SizedBox(width: 8),
+
                 Text(
                   'Muntinlupa City',
                   style: TextStyle(
@@ -89,9 +148,13 @@ class PlaceDetailsPage extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: () {},
+                onPressed: () {
+                  _addToItinerary(context);
+                },
                 icon: const Icon(Icons.add),
-                label: const Text('Add to Itinerary'),
+                label: const Text(
+                  'Add to Itinerary',
+                ),
               ),
             ),
           ],

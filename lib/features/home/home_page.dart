@@ -1,15 +1,65 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../auth/login_page.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
+
+  Future<void> _logout(BuildContext context) async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Log out?'),
+          content: const Text(
+            'Are you sure you want to log out?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(false);
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(true);
+              },
+              child: const Text('Log out'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldLogout != true) return;
+
+    await FirebaseAuth.instance.signOut();
+
+    if (!context.mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const LoginPage(),
+      ),
+      (route) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('TravelPal'),
+        actions: [
+          IconButton(
+            tooltip: 'Log out',
+            icon: const Icon(Icons.logout),
+            onPressed: () => _logout(context),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -52,7 +102,8 @@ class HomePage extends StatelessWidget {
             _buildPlaceholderCard(
               icon: Icons.place,
               title: 'Places coming soon',
-              description: 'Discover attractions and landmarks around Muntinlupa.',
+              description:
+                  'Discover attractions and landmarks around Muntinlupa.',
             ),
             const SizedBox(height: 24),
             const Text(
@@ -66,7 +117,8 @@ class HomePage extends StatelessWidget {
             _buildPlaceholderCard(
               icon: Icons.history_edu,
               title: 'History coming soon',
-              description: 'Learn about the history and heritage of Muntinlupa.',
+              description:
+                  'Learn about the history and heritage of Muntinlupa.',
             ),
           ],
         ),

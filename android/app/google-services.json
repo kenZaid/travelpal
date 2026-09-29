@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "309490674400",
+    "project_id": "travelpal-muntinlupa",
+    "storage_bucket": "travelpal-muntinlupa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:309490674400:android:450b9e1c55a6eba7903e85",
+        "android_client_info": {
+          "package_name": "com.example.travelpal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCs7WR9z29zBFNAcekHbuiDku2kwMdTj50"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

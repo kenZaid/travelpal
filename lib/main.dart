@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/login_page.dart';
 import 'features/auth/register_page.dart';
+import 'features/auth/welcome_page.dart';
 import 'features/home/home_page.dart';
 import 'features/map/map_page.dart';
 import 'features/places/places_page.dart';
@@ -35,6 +36,7 @@ class TravelPalApp extends StatelessWidget {
       routes: {
         '/login': (_) => const LoginPage(),
         '/register': (_) => const RegisterPage(),
+        '/welcome': (_) => const WelcomePage(),
         '/home': (_) => const MainNavigationPage(),
       },
     );
@@ -52,14 +54,16 @@ class AuthGate extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(
+              child: CircularProgressIndicator(),
+            ),
           );
         }
 
         final user = snapshot.data;
 
         if (user != null && user.emailVerified) {
-          return const MainNavigationPage();
+          return const WelcomePage();
         }
 
         return const LoginPage();

@@ -1,6 +1,8 @@
+
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../models/place_data.dart';
 import 'itinerary_data.dart';
 
 class ItineraryPage extends StatefulWidget {
@@ -11,11 +13,46 @@ class ItineraryPage extends StatefulWidget {
 }
 
 class _ItineraryPageState extends State<ItineraryPage> {
-  final List<String> _availablePlaces = [
-    'Jamboree Lake',
-    'Museo ng Muntinlupa',
-    'New Bilibid Prison',
-  ];
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    ItineraryData.changes.addListener(_onItineraryChanged);
+    _loadItinerary();
+  }
+
+  @override
+  void dispose() {
+    ItineraryData.changes.removeListener(_onItineraryChanged);
+    super.dispose();
+  }
+
+  void _onItineraryChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _loadItinerary() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await ItineraryData.loadPlaces();
+    } catch (e) {
+      _errorMessage = 'Unable to load your itinerary. Please try again.';
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = false;
+    });
+  }
 
   Future<void> _showAddPlaceDialog() async {
     String? selectedPlace;
@@ -24,7 +61,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
 
     await showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
@@ -36,10 +73,14 @@ class _ItineraryPageState extends State<ItineraryPage> {
                     decoration: const InputDecoration(
                       labelText: 'Place',
                     ),
-                    items: _availablePlaces.map((place) {
-                      return DropdownMenuItem(
-                        value: place,
-                        child: Text(place),
+                    isExpanded: true,
+                    items: PlaceData.places.map((place) {
+                      return DropdownMenuItem<String>(
+                        value: place.name,
+                        child: Text(
+                          place.name,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       );
                     }).toList(),
                     onChanged: (value) {
@@ -53,9 +94,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
 
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading: const Icon(
-                      Icons.calendar_today,
-                    ),
+                    leading: const Icon(Icons.calendar_today),
                     title: Text(
                       selectedDate == null
                           ? 'Select Date'
@@ -81,9 +120,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
 
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading: const Icon(
-                      Icons.access_time,
-                    ),
+                    leading: const Icon(Icons.access_time),
                     title: Text(
                       selectedTime == null
                           ? 'Select Time'
@@ -104,11 +141,10 @@ class _ItineraryPageState extends State<ItineraryPage> {
                   ),
                 ],
               ),
-
               actions: [
                 TextButton(
                   onPressed: () {
-                    Navigator.pop(context);
+                    Navigator.pop(dialogContext);
                   },
                   child: const Text('Cancel'),
                 ),
@@ -118,7 +154,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
                       selectedPlace != null &&
                           selectedDate != null &&
                           selectedTime != null
-                      ? () {
+                      ? () async {
                           if (ItineraryData.containsPlace(
                             selectedPlace!,
                           )) {
@@ -135,19 +171,48 @@ class _ItineraryPageState extends State<ItineraryPage> {
                             return;
                           }
 
-                          ItineraryData.addPlace(
-                            place: selectedPlace!,
-                            description:
-                                'Explore this place in TravelPal.',
-                            date: selectedDate!,
-                            time: selectedTime!.format(
-                              context,
-                            ),
-                          );
+                          final selectedPlaceData = PlaceData.places
+                              .firstWhere(
+                                (place) =>
+                                    place.name == selectedPlace,
+                              );
 
-                          Navigator.pop(context);
+                          try {
+                            await ItineraryData.addPlace(
+                              place: selectedPlaceData.name,
+                              description: selectedPlaceData.description,
+                              date: selectedDate!,
+                              time: selectedTime!.format(context),
+                            );
 
-                          setState(() {});
+                            if (!mounted || !dialogContext.mounted) {
+                              return;
+                            }
+
+                            Navigator.pop(dialogContext);
+
+                            ScaffoldMessenger.of(
+                              this.context,
+                            ).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Place added to your itinerary!',
+                                ),
+                              ),
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+
+                            ScaffoldMessenger.of(
+                              this.context,
+                            ).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Failed to add place: $e',
+                                ),
+                              ),
+                            );
+                          }
                         }
                       : null,
                   child: const Text('Add'),
@@ -163,39 +228,31 @@ class _ItineraryPageState extends State<ItineraryPage> {
   Future<void> _showEditDialog(int index) async {
     final item = ItineraryData.items[index];
 
-    DateTime selectedDate =
-        item['date'] as DateTime;
+    DateTime selectedDate = item['date'] as DateTime;
+    String selectedTime = item['time'] as String;
 
-    String selectedTime =
-        item['time'] as String;
-
-    TimeOfDay timeOfDay =
-        _parseTime(selectedTime);
+    TimeOfDay timeOfDay = _parseTime(selectedTime);
 
     await showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: Text(
-                'Edit ${item['place']}',
-              ),
+              title: Text('Edit ${item['place']}'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading: const Icon(
-                      Icons.calendar_today,
-                    ),
+                    leading: const Icon(Icons.calendar_today),
                     title: Text(
                       '${selectedDate.month}/${selectedDate.day}/${selectedDate.year}',
                     ),
                     onTap: () async {
                       final date = await showDatePicker(
                         context: context,
-                        firstDate: DateTime.now(),
+                        firstDate: DateTime(2000),
                         lastDate: DateTime.now().add(
                           const Duration(days: 365),
                         ),
@@ -212,15 +269,10 @@ class _ItineraryPageState extends State<ItineraryPage> {
 
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading: const Icon(
-                      Icons.access_time,
-                    ),
-                    title: Text(
-                      timeOfDay.format(context),
-                    ),
+                    leading: const Icon(Icons.access_time),
+                    title: Text(timeOfDay.format(context)),
                     onTap: () async {
-                      final time =
-                          await showTimePicker(
+                      final time = await showTimePicker(
                         context: context,
                         initialTime: timeOfDay,
                       );
@@ -228,34 +280,58 @@ class _ItineraryPageState extends State<ItineraryPage> {
                       if (time != null) {
                         setDialogState(() {
                           timeOfDay = time;
-                          selectedTime =
-                              time.format(context);
+                          selectedTime = time.format(context);
                         });
                       }
                     },
                   ),
                 ],
               ),
-
               actions: [
                 TextButton(
                   onPressed: () {
-                    Navigator.pop(context);
+                    Navigator.pop(dialogContext);
                   },
                   child: const Text('Cancel'),
                 ),
 
                 ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      ItineraryData.items[index]
-                          ['date'] = selectedDate;
+                  onPressed: () async {
+                    try {
+                      await ItineraryData.updatePlace(
+                        index: index,
+                        date: selectedDate,
+                        time: selectedTime,
+                      );
 
-                      ItineraryData.items[index]
-                          ['time'] = selectedTime;
-                    });
+                      if (!mounted || !dialogContext.mounted) {
+                        return;
+                      }
 
-                    Navigator.pop(context);
+                      Navigator.pop(dialogContext);
+
+                      ScaffoldMessenger.of(
+                        this.context,
+                      ).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Itinerary updated successfully!',
+                          ),
+                        ),
+                      );
+                    } catch (e) {
+                      if (!mounted) return;
+
+                      ScaffoldMessenger.of(
+                        this.context,
+                      ).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Failed to update itinerary: $e',
+                          ),
+                        ),
+                      );
+                    }
                   },
                   child: const Text('Save'),
                 ),
@@ -265,6 +341,28 @@ class _ItineraryPageState extends State<ItineraryPage> {
         );
       },
     );
+  }
+
+  Future<void> _deletePlace(int index) async {
+    try {
+      await ItineraryData.removePlace(index);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Place removed from itinerary.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to delete place: $e'),
+        ),
+      );
+    }
   }
 
   TimeOfDay _parseTime(String time) {
@@ -304,215 +402,221 @@ class _ItineraryPageState extends State<ItineraryPage> {
       appBar: AppBar(
         title: const Text('My Itinerary'),
       ),
-
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const Text(
-            'My Trip',
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: AppColors.primaryBlue,
-            ),
-          ),
-
-          const SizedBox(height: 8),
-
-          const Text(
-            'Plan and organize the places you want to visit.',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppColors.textSecondary,
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          if (itinerary.isEmpty)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.event_note,
-                      size: 60,
-                      color: AppColors.primaryBlue,
-                    ),
-
-                    SizedBox(height: 12),
-
-                    Text(
-                      'Your itinerary is empty.',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-
-                    SizedBox(height: 6),
-
-                    Text(
-                      'Add places that you want to visit.',
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-          ...itinerary.asMap().entries.map(
-            (entry) {
-              final index = entry.key;
-              final item = entry.value;
-
-              final place =
-                  item['place'] as String;
-
-              final description =
-                  item['description'] as String;
-
-              final date =
-                  item['date'] as DateTime;
-
-              final time =
-                  item['time'] as String;
-
-              return Card(
-                margin: const EdgeInsets.only(
-                  bottom: 12,
-                ),
-
-                child: ListTile(
-                  contentPadding:
-                      const EdgeInsets.all(16),
-
-                  leading: const CircleAvatar(
-                    backgroundColor:
-                        AppColors.primaryBlue,
-                    child: Icon(
-                      Icons.place,
-                      color: Colors.white,
-                    ),
-                  ),
-
-                  title: Text(
-                    place,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-
-                  subtitle: Padding(
-                    padding:
-                        const EdgeInsets.only(
-                      top: 6,
-                    ),
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(),
+            )
+          : _errorMessage != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          description,
-                          maxLines: 2,
-                          overflow:
-                              TextOverflow.ellipsis,
+                        const Icon(
+                          Icons.cloud_off,
+                          size: 50,
                         ),
-
-                        const SizedBox(height: 8),
-
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.calendar_today,
-                              size: 16,
-                            ),
-
-                            const SizedBox(width: 6),
-
-                            Text(
-                              _formatDate(date),
-                            ),
-
-                            const SizedBox(width: 14),
-
-                            const Icon(
-                              Icons.access_time,
-                              size: 16,
-                            ),
-
-                            const SizedBox(width: 6),
-
-                            Text(time),
-                          ],
+                        const SizedBox(height: 12),
+                        Text(
+                          _errorMessage!,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: _loadItinerary,
+                          child: const Text('Try Again'),
                         ),
                       ],
                     ),
                   ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    const Text(
+                      'My Trip',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primaryBlue,
+                      ),
+                    ),
 
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (value) {
-                      if (value == 'edit') {
-                        _showEditDialog(index);
-                      }
+                    const SizedBox(height: 8),
 
-                      if (value == 'delete') {
-                        setState(() {
-                          ItineraryData.removePlace(
-                            index,
-                          );
-                        });
-                      }
-                    },
-                    itemBuilder: (context) {
-                      return const [
-                        PopupMenuItem(
-                          value: 'edit',
-                          child: Row(
-                            children: [
-                              Icon(Icons.edit),
-                              SizedBox(width: 8),
-                              Text('Edit'),
-                            ],
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 'delete',
-                          child: Row(
+                    const Text(
+                      'Plan and organize the places you want to visit.',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    if (itinerary.isEmpty)
+                      const Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Column(
                             children: [
                               Icon(
-                                Icons.delete_outline,
+                                Icons.event_note,
+                                size: 60,
+                                color: AppColors.primaryBlue,
                               ),
-                              SizedBox(width: 8),
-                              Text('Delete'),
+
+                              SizedBox(height: 12),
+
+                              Text(
+                                'Your itinerary is empty.',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+
+                              SizedBox(height: 6),
+
+                              Text(
+                                'Add places that you want to visit.',
+                                textAlign: TextAlign.center,
+                              ),
                             ],
                           ),
                         ),
-                      ];
-                    },
-                  ),
+                      ),
+
+                    ...itinerary.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final item = entry.value;
+
+                      final place = item['place'] as String;
+                      final description = item['description'] as String;
+                      final date = item['date'] as DateTime;
+                      final time = item['time'] as String;
+
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.all(16),
+
+                          leading: const CircleAvatar(
+                            backgroundColor: AppColors.primaryBlue,
+                            child: Icon(
+                              Icons.place,
+                              color: Colors.white,
+                            ),
+                          ),
+
+                          title: Text(
+                            place,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  description,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+
+                                const SizedBox(height: 8),
+
+                                Wrap(
+                                  spacing: 14,
+                                  runSpacing: 6,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.calendar_today,
+                                          size: 16,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(_formatDate(date)),
+                                      ],
+                                    ),
+
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.access_time,
+                                          size: 16,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(time),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          trailing: PopupMenuButton<String>(
+                            onSelected: (value) {
+                              if (value == 'edit') {
+                                _showEditDialog(index);
+                              }
+
+                              if (value == 'delete') {
+                                _deletePlace(index);
+                              }
+                            },
+                            itemBuilder: (context) {
+                              return const [
+                                PopupMenuItem(
+                                  value: 'edit',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.edit),
+                                      SizedBox(width: 8),
+                                      Text('Edit'),
+                                    ],
+                                  ),
+                                ),
+
+                                PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete_outline),
+                                      SizedBox(width: 8),
+                                      Text('Delete'),
+                                    ],
+                                  ),
+                                ),
+                              ];
+                            },
+                          ),
+                        ),
+                      );
+                    }),
+
+                    const SizedBox(height: 12),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _showAddPlaceDialog,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add Place'),
+                      ),
+                    ),
+                  ],
                 ),
-              );
-            },
-          ),
-
-          const SizedBox(height: 12),
-
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed:
-                  _showAddPlaceDialog,
-              icon: const Icon(Icons.add),
-              label: const Text(
-                'Add Place',
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

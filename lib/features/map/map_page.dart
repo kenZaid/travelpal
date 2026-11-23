@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as dev;
 
@@ -8,9 +9,9 @@ import 'package:geofencing_api/geofencing_api.dart' as geofence;
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:latlong2/latlong.dart';
 
+import '../../models/place_data.dart';
 import '../../models/place.dart';
 import '../places/place_details_page.dart';
-import '../places/places_page.dart';
 
 class MapPage extends StatefulWidget {
   const MapPage({super.key});
@@ -26,10 +27,12 @@ class _MapPageState extends State<MapPage>
   LatLng? userLocation;
   bool isLoadingLocation = false;
 
+  // Realtime GPS tracking
+  StreamSubscription<geo.Position>? _positionSubscription;
+
   String geofenceMessage = 'Geofences are starting...';
 
-  String? nearbyPlaceName;
-  String? nearbyPlaceDescription;
+  Place? nearbyPlace;
 
   late final AnimationController _pulseController;
 
@@ -43,7 +46,7 @@ class _MapPageState extends State<MapPage>
   // PLACES
   // ------------------------------------------------------------
 
-  List<Place> get allPlaces => PlacesPage.places;
+  List<Place> get allPlaces => PlaceData.places;
 
   // ------------------------------------------------------------
   // INIT
@@ -59,7 +62,7 @@ class _MapPageState extends State<MapPage>
     )..repeat();
 
     _loadMuntinlupaBoundary();
-    _getUserLocation();
+    _startLocationTracking();
     _startGeofences();
   }
 
@@ -187,14 +190,10 @@ class _MapPageState extends State<MapPage>
   }
 
   // ------------------------------------------------------------
-  // USER LOCATION
+  // REALTIME USER LOCATION
   // ------------------------------------------------------------
 
-  Future<void> _getUserLocation() async {
-    setState(() {
-      isLoadingLocation = true;
-    });
-
+  Future<bool> _prepareLocationPermission() async {
     final serviceEnabled =
         await geo.Geolocator.isLocationServiceEnabled();
 
@@ -205,7 +204,7 @@ class _MapPageState extends State<MapPage>
         });
       }
 
-      return;
+      return false;
     }
 
     geo.LocationPermission permission =
@@ -227,24 +226,109 @@ class _MapPageState extends State<MapPage>
         });
       }
 
+      return false;
+    }
+
+    return true;
+  }
+
+  Future<void> _startLocationTracking() async {
+    if (mounted) {
+      setState(() {
+        isLoadingLocation = true;
+      });
+    }
+
+    final permissionReady =
+        await _prepareLocationPermission();
+
+    if (!permissionReady) {
       return;
     }
 
-    final position =
-        await geo.Geolocator.getCurrentPosition();
+    try {
+      // Get the first location immediately.
+      final initialPosition =
+          await geo.Geolocator.getCurrentPosition();
 
-    if (!mounted) {
-      return;
-    }
+      if (mounted) {
+        setState(() {
+          userLocation = LatLng(
+            initialPosition.latitude,
+            initialPosition.longitude,
+          );
 
-    setState(() {
-      userLocation = LatLng(
-        position.latitude,
-        position.longitude,
+          isLoadingLocation = false;
+        });
+      }
+
+      // Start continuous GPS tracking.
+      // distanceFilter: 0 asks the platform to deliver every location
+      // update it receives. The browser/device still controls how often
+      // fresh GPS locations are actually provided.
+      const locationSettings =
+          geo.LocationSettings(
+        accuracy: geo.LocationAccuracy.high,
+        distanceFilter: 0,
       );
 
-      isLoadingLocation = false;
-    });
+      // Cancel any previous stream before creating a new one.
+      await _positionSubscription?.cancel();
+
+      _positionSubscription =
+          geo.Geolocator.getPositionStream(
+        locationSettings: locationSettings,
+      ).listen(
+        (geo.Position position) {
+          dev.log(
+            'LIVE GPS UPDATE: '
+            'lat=${position.latitude}, '
+            'lng=${position.longitude}, '
+            'accuracy=${position.accuracy}m',
+          );
+
+          if (!mounted) {
+            return;
+          }
+
+          setState(() {
+            userLocation = LatLng(
+              position.latitude,
+              position.longitude,
+            );
+            isLoadingLocation = false;
+          });
+        },
+        onError: (error, stackTrace) {
+          dev.log(
+            'Realtime GPS stream error: $error',
+            stackTrace: stackTrace,
+          );
+
+          if (mounted) {
+            setState(() {
+              isLoadingLocation = false;
+            });
+          }
+        },
+        onDone: () {
+          dev.log('Realtime GPS stream ended.');
+        },
+      );
+
+      dev.log('Realtime GPS stream subscription started.');
+    } catch (e, s) {
+      dev.log(
+        'Failed to start realtime GPS: $e',
+        stackTrace: s,
+      );
+
+      if (mounted) {
+        setState(() {
+          isLoadingLocation = false;
+        });
+      }
+    }
   }
 
   // ------------------------------------------------------------
@@ -252,13 +336,20 @@ class _MapPageState extends State<MapPage>
   // ------------------------------------------------------------
 
   Future<void> _goToCurrentLocation() async {
-    await _getUserLocation();
-
     if (userLocation != null) {
       _mapController.move(
         userLocation!,
         16,
       );
+    } else {
+      await _startLocationTracking();
+
+      if (userLocation != null) {
+        _mapController.move(
+          userLocation!,
+          16,
+        );
+      }
     }
   }
 
@@ -414,49 +505,30 @@ class _MapPageState extends State<MapPage>
       return;
     }
 
-    String placeName = region.id;
-
-    String placeDescription =
-        'Explore this place in TravelPal.';
-
     final matchingPlaces = allPlaces.where(
       (place) => place.id == region.id,
     );
 
-    if (matchingPlaces.isNotEmpty) {
-      final place = matchingPlaces.first;
+    final Place? matchedPlace = matchingPlaces.isNotEmpty
+        ? matchingPlaces.first
+        : null;
 
-      placeName = place.name;
-      placeDescription = place.description;
-    } else if (region.data is Map) {
-      final data = region.data as Map;
-
-      if (data['name'] != null) {
-        placeName =
-            data['name'].toString();
+    if (status == geofence.GeofenceStatus.enter) {
+      if (matchedPlace == null) {
+        return;
       }
-    }
 
-    if (status ==
-        geofence.GeofenceStatus.enter) {
       setState(() {
-        nearbyPlaceName = placeName;
-
-        nearbyPlaceDescription =
-            placeDescription;
-
+        nearbyPlace = matchedPlace;
         geofenceMessage =
-            '📍 You are near $placeName!';
+            '📍 You are near ${matchedPlace.name}!';
       });
-    } else if (status ==
-        geofence.GeofenceStatus.exit) {
+    } else if (status == geofence.GeofenceStatus.exit) {
       setState(() {
-        nearbyPlaceName = null;
-
-        nearbyPlaceDescription = null;
-
-        geofenceMessage =
-            'You left the $placeName area.';
+        nearbyPlace = null;
+        geofenceMessage = matchedPlace != null
+            ? 'You left the ${matchedPlace.name} area.'
+            : 'You left a nearby place area.';
       });
     }
   }
@@ -476,19 +548,15 @@ class _MapPageState extends State<MapPage>
   // ------------------------------------------------------------
 
   void _openNearbyPlace() {
-    if (nearbyPlaceName == null) {
+    if (nearbyPlace == null) {
       return;
     }
 
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) =>
-            PlaceDetailsPage(
-          placeName: nearbyPlaceName!,
-          description:
-              nearbyPlaceDescription ??
-                  'Explore this place in TravelPal.',
+        builder: (context) => PlaceDetailsPage(
+          place: nearbyPlace!,
         ),
       ),
     );
@@ -502,10 +570,6 @@ class _MapPageState extends State<MapPage>
     int index,
     Place place,
   ) {
-    // FIX:
-    // Place has latitude + longitude.
-    // It does NOT have a "position" property.
-
     final LatLng position = LatLng(
       place.latitude,
       place.longitude,
@@ -527,10 +591,8 @@ class _MapPageState extends State<MapPage>
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) =>
-                  PlaceDetailsPage(
-                placeName: place.name,
-                description: place.description,
+              builder: (context) => PlaceDetailsPage(
+                place: place,
               ),
             ),
           );
@@ -765,6 +827,29 @@ class _MapPageState extends State<MapPage>
           ),
 
           // ----------------------------------------------------
+          // GPS STREAM DEBUG STATUS
+          // ----------------------------------------------------
+
+          if (userLocation != null)
+            Positioned(
+              top: 16,
+              left: 16,
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Text(
+                    'GPS: ${userLocation!.latitude.toStringAsFixed(6)}, '
+                    '${userLocation!.longitude.toStringAsFixed(6)}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // ----------------------------------------------------
           // LOCATION LOADING
           // ----------------------------------------------------
 
@@ -804,7 +889,7 @@ class _MapPageState extends State<MapPage>
           // NEARBY PLACE CARD
           // ----------------------------------------------------
 
-          if (nearbyPlaceName != null)
+          if (nearbyPlace != null)
             Positioned(
               left: 16,
               right: 16,
@@ -818,8 +903,7 @@ class _MapPageState extends State<MapPage>
                   ),
                   child: Column(
                     crossAxisAlignment:
-                        CrossAxisAlignment
-                            .start,
+                        CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
@@ -866,11 +950,7 @@ class _MapPageState extends State<MapPage>
                           IconButton(
                             onPressed: () {
                               setState(() {
-                                nearbyPlaceName =
-                                    null;
-
-                                nearbyPlaceDescription =
-                                    null;
+                                nearbyPlace = null;
 
                                 geofenceMessage =
                                     '${allPlaces.length} geofences are active.';
@@ -889,7 +969,7 @@ class _MapPageState extends State<MapPage>
                       ),
 
                       Text(
-                        nearbyPlaceName!,
+                        nearbyPlace!.name,
                         style:
                             const TextStyle(
                           fontSize: 20,
@@ -903,8 +983,7 @@ class _MapPageState extends State<MapPage>
                       ),
 
                       Text(
-                        nearbyPlaceDescription ??
-                            '',
+                        nearbyPlace!.description,
                         maxLines: 2,
                         overflow:
                             TextOverflow
@@ -972,6 +1051,8 @@ class _MapPageState extends State<MapPage>
 
   @override
   void dispose() {
+    _positionSubscription?.cancel();
+
     _pulseController.dispose();
 
     geofence.Geofencing.instance

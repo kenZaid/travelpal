@@ -1,3 +1,4 @@
+import 'welcome_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -95,7 +96,12 @@ class _LoginPageState extends State<LoginPage> {
 
       if (!mounted) return;
 
-      Navigator.of(context).pushReplacementNamed('/home');
+      // Go to Welcome Page after successful login.
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => const WelcomePage(),
+        ),
+      );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
 
@@ -165,19 +171,25 @@ class _LoginPageState extends State<LoginPage> {
                         Icons.travel_explore,
                         size: 72,
                       ),
+
                       const SizedBox(height: 20),
+
                       Text(
                         'Welcome to TravelPal',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
+
                       const SizedBox(height: 8),
+
                       Text(
                         'Explore Muntinlupa with ease.',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
+
                       const SizedBox(height: 32),
+
                       TextFormField(
                         controller: _emailController,
                         enabled: !_isLoading,
@@ -191,7 +203,9 @@ class _LoginPageState extends State<LoginPage> {
                           border: OutlineInputBorder(),
                         ),
                       ),
+
                       const SizedBox(height: 16),
+
                       TextFormField(
                         controller: _passwordController,
                         enabled: !_isLoading,
@@ -215,13 +229,16 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                             onPressed: () {
                               setState(() {
-                                _obscurePassword = !_obscurePassword;
+                                _obscurePassword =
+                                    !_obscurePassword;
                               });
                             },
                           ),
                         ),
                       ),
+
                       const SizedBox(height: 24),
+
                       SizedBox(
                         height: 52,
                         child: FilledButton(
@@ -237,13 +254,16 @@ class _LoginPageState extends State<LoginPage> {
                               : const Text('LOGIN'),
                         ),
                       ),
+
                       const SizedBox(height: 24),
+
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           const Text("Don't have an account?"),
                           TextButton(
-                            onPressed: _isLoading ? null : _goToRegister,
+                            onPressed:
+                                _isLoading ? null : _goToRegister,
                             child: const Text('Register'),
                           ),
                         ],
